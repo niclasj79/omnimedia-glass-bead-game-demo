@@ -87,9 +87,37 @@ const sketch = (p) => {
         }, 500);
     };
 
-    function populateLegend() { /* ... same as before ... */ }
+    function populateLegend() {
+        if (!disciplineLegend) return;
+        disciplineLegend.html('');
+        for (const key in DISCIPLINES) {
+            const d = DISCIPLINES[key];
+            const li = p.createElement('li');
+            const colorBox = p.createElement('span');
+            colorBox.addClass('legend-color-box');
+            colorBox.style('background-color', `rgb(${d.color[0]},${d.color[1]},${d.color[2]})`);
+            colorBox.parent(li);
+            const nameSpan = p.createSpan(d.name);
+            nameSpan.parent(li);
+            li.parent(disciplineLegend);
+        }
+    }
     p.easeOutCubic = (t) => { return 1 - Math.pow(1 - t, 3); };
-    function initialCameraDrift() { /* ... same as before ... */ }
+    let driftFrame = 0;
+    function initialCameraDrift() {
+        const total = GAME_SETTINGS.CAMERA_DRIFT_FRAMES;
+        if (driftFrame <= total) {
+            const t = p.easeOutCubic(driftFrame / total);
+            const x = p.lerp(startCameraPosition.x, targetCameraPosition.x, t);
+            const y = p.lerp(startCameraPosition.y, targetCameraPosition.y, t);
+            const z = p.lerp(startCameraPosition.z, targetCameraPosition.z, t);
+            cam.setPosition(x, y, z);
+            cam.lookAt(0, 0, 0);
+            driftFrame++;
+        } else {
+            initialDriftComplete = true;
+        }
+    }
 
 
     p.draw = () => {
@@ -115,8 +143,16 @@ const sketch = (p) => {
         updateTextOverlays();
     };
 
-    function generateBeads() { /* ... same as before ... */ }
-    function resetGame() { /* ... same as before, but ensure audioContextReady is reset if needed, though it should persist */
+    function generateBeads() {
+        beads = [];
+        const keys = Object.keys(DISCIPLINES);
+        for (let i = 0; i < GAME_SETTINGS.NUM_BEADS; i++) {
+            const type = keys[Math.floor(p.random(keys.length))];
+            const bead = new Bead(p, i, type, DISCIPLINES[type]);
+            beads.push(bead);
+        }
+    }
+    function resetGame() {
         // audioContextReady = false; // No, don't reset this, context stays running
         generateBeads();
         selectedBeads = [];
@@ -133,9 +169,54 @@ const sketch = (p) => {
         activeVisualEffects = [];
         console.log("Game Reset");
     }
-    function drawLinks() { /* ... same as before ... */ }
-    function handleActiveEffects() { /* ... same as before ... */ }
-    function updateTextOverlays() { /* ... same as before ... */ }
+    function drawLinks() {
+        p.stroke(255);
+        p.strokeWeight(2);
+        links.forEach(l => {
+            p.line(l.bead1.pos.x, l.bead1.pos.y, l.bead1.pos.z,
+                   l.bead2.pos.x, l.bead2.pos.y, l.bead2.pos.z);
+        });
+    }
+    function handleActiveEffects() {
+        const now = p.millis();
+        activeVisualEffects = activeVisualEffects.filter(e => {
+            const elapsed = now - e.start;
+            if (elapsed < GAME_SETTINGS.LINK_EFFECT_DURATION) {
+                const alpha = p.map(elapsed, 0, GAME_SETTINGS.LINK_EFFECT_DURATION, 255, 0);
+                p.push();
+                p.stroke(255, 255, 200, alpha);
+                p.strokeWeight(4);
+                p.line(e.bead1.pos.x, e.bead1.pos.y, e.bead1.pos.z,
+                       e.bead2.pos.x, e.bead2.pos.y, e.bead2.pos.z);
+                p.pop();
+                return true;
+            }
+            return false;
+        });
+    }
+    function updateTextOverlays() {
+        const now = p.millis();
+        activeTextOverlays = activeTextOverlays.filter(o => {
+            const elapsed = now - o.start;
+            if (elapsed < GAME_SETTINGS.TEXT_SNIPPET_DURATION) {
+                const screen1 = o.bead1.getScreenPosition();
+                const screen2 = o.bead2.getScreenPosition();
+                const x = (screen1.x + screen2.x) / 2;
+                const y = (screen1.y + screen2.y) / 2;
+                o.element.style('left', `${x}px`);
+                o.element.style('top', `${y}px`);
+                let opacity = 1;
+                const fade = 500;
+                if (elapsed < fade) opacity = elapsed / fade;
+                else if (elapsed > GAME_SETTINGS.TEXT_SNIPPET_DURATION - fade)
+                    opacity = (GAME_SETTINGS.TEXT_SNIPPET_DURATION - elapsed) / fade;
+                o.element.style('opacity', opacity);
+                return true;
+            }
+            o.element.remove();
+            return false;
+        });
+    }
 
     p.mousePressed = () => {
         console.log("mousePressed event fired at X:", p.mouseX, "Y:", p.mouseY);
@@ -181,7 +262,22 @@ const sketch = (p) => {
     };
     p.touchStarted = p.mousePressed; // Make touch use the same logic for now
 
-    function handleBeadSelection(bead) { /* ... same as before ... */ }
+    function handleBeadSelection(bead) {
+        if (selectedBeads.includes(bead)) {
+            bead.setSelected(false);
+            selectedBeads = selectedBeads.filter(b => b !== bead);
+            return;
+        }
+
+        bead.setSelected(true);
+        selectedBeads.push(bead);
+
+        if (selectedBeads.length === 2) {
+            createLink(selectedBeads[0], selectedBeads[1]);
+            selectedBeads.forEach(b => b.setSelected(false));
+            selectedBeads = [];
+        }
+    }
 
     function createLink(bead1, bead2) {
         const linkExists = links.some(l => 
@@ -211,18 +307,28 @@ const sketch = (p) => {
             console.warn("Synth not ready or muted, no sound played.");
         }
 
-        activeVisualEffects.push({ /* ... same as before ... */ });
+        activeVisualEffects.push({ start: p.millis(), bead1, bead2 });
         const discipline1 = DISCIPLINES[bead1.disciplineType];
         const discipline2 = DISCIPLINES[bead2.disciplineType];
         const textToShow = p.random(discipline1.textPool) + "<br><br>... resonates with ...<br><br>" + p.random(discipline2.textPool);
         const textElement = p.createElement('div', textToShow);
         textElement.addClass('text-snippet');
         textElement.parent(textOverlayContainer); 
-        activeTextOverlays.push({ /* ... same as before ... */ });
+        activeTextOverlays.push({
+            start: p.millis(),
+            bead1,
+            bead2,
+            element: textElement
+        });
     }
 
-    function toggleMute() { /* ... same as before ... */ }
-    p.windowResized = () => { /* ... same as before ... */ };
+    function toggleMute() {
+        isMuted = !isMuted;
+        if (muteButton) muteButton.html(isMuted ? 'Unmute' : 'Mute');
+    }
+    p.windowResized = () => {
+        p.resizeCanvas(p.windowWidth, p.windowHeight);
+    };
 };
 
 new p5(sketch);
