@@ -46,7 +46,11 @@ const sketch = (p) => {
 
     p.setup = () => {
         p.createCanvas(p.windowWidth, p.windowHeight, p.WEBGL);
-        p.pixelDensity(p.min(p.devicePixelRatio, 1.5));
+        // Use the browser's devicePixelRatio for crisp rendering,
+        // fallback to 1 if not available. p.devicePixelRatio is undefined
+        // in p5.js and caused pixelDensity to be set to NaN.
+        const dpr = window.devicePixelRatio || 1;
+        p.pixelDensity(p.min(dpr, 1.5));
         p.disableFriendlyErrors = true;
 
         cam = p.createCamera();
