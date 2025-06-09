@@ -28,9 +28,33 @@ export class Bead {
         this.rotationSpeed = p.random(-0.005, 0.005);
     }
 
-    update() { /* ... same as before ... */ }
-    display() { /* ... same as before ... */ }
-    setSelected(state) { /* ... same as before ... */ }
+    update() {
+        // Gentle floating movement and rotation
+        const p = this.p;
+        const floatY = Math.sin(p.frameCount * this.floatSpeed + this.floatOffset) * this.floatAmplitude;
+        this.pos = p.createVector(this.basePos.x, this.basePos.y + floatY, this.basePos.z);
+        this.rotationAngle += this.rotationSpeed;
+    }
+
+    display() {
+        const p = this.p;
+        p.push();
+        p.translate(this.pos.x, this.pos.y, this.pos.z);
+        p.rotateY(this.rotationAngle);
+        p.noStroke();
+        p.fill(this.currentColor);
+        p.sphere(this.size, 12, 12);
+        p.pop();
+    }
+
+    setSelected(state) {
+        this.isSelected = state;
+        if (state) {
+            this.currentColor = this.p.color(255, 255, 255);
+        } else {
+            this.currentColor = this.baseColor;
+        }
+    }
 
     getScreenPosition() {
         // Defensive check for valid position values
